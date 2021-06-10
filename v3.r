@@ -1,15 +1,17 @@
 # Wczytanie pakietow
 
-library(readr) # Wczytywanie danych
-library(psych) # principal
-library(corrplot) # wykres korelacji
-library(dplyr) # pakiet z tidyverse -
-library(tidyr) # do uporzƒÖdkowywania danych
-library(ggplot2) # ≈Çadne wykresy
-library(GGally) # dodatek do ggplot2
-library(ggrepel) # dodatek do edycji ggplot2
-library(cluster) # dla funkcji pam
-library(fpc) # dla funkcji kmeansruns, pamk
+library(readr)
+library(psych)
+library(corrplot)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(GGally)
+library(ggrepel)
+library(cluster)
+library(fpc)
+library(moments) # skosnosc
+library(heatmaply) # heatmapa
 
 # Weryfikacja sciezki do pliku
 getwd()
@@ -32,18 +34,18 @@ head(rawData, 3)
 # y     - Zanieczyszczenie powietrza pylami/czastkami <10??m w tonach
 # x1    - Produkcja energii elektrycznej z ogniw fotowoltaicznych (TOE)
 # x2    - Produkcja energii elektrycznej ze stalych paliw kopalnianych (Tysiac ton ekwiwalentu ropy naftowej, TOE)
-# x3    - Produkcja energii elektrycznej z olejÛw napedowych (TOE)
+# x3    - Produkcja energii elektrycznej z olej√≥w napedowych (TOE)
 # x4    - Produkcja energii elektrycznej brutto (TOE)
 # x5    - Krajowe wydatki na ochrone srodowiska (mln Euro)
 # x6    - PKB na mieszkanca w SSN (standard sily nabywczej)
 # x7    - Dlugosc autostrad w kraju (w km)
 # x8    - Produkcja smieci (tony)
 # x9    - Chroniona powierzchnia kraju (obszary ladowe, wartosci wyrazone jako procent powierzchni kraju)
-# x10   - Wskazniki recyklingu odpadÛw opakowaniowych wedlug rodzaju opakowania (wartosc procentowa ogÛlnej liczby opakowan przeznaczonych do recyklingu)
+# x10   - Wskazniki recyklingu odpad√≥w opakowaniowych wedlug rodzaju opakowania (wartosc procentowa og√≥lnej liczby opakowan przeznaczonych do recyklingu)
 # x11   - Powierzchnia kraju (w kilometrach kwadratowych)
 
 # Poprawa blednie wczytanej nazwy kolumny
-rawData = rawData %>% rename(Country = Ô..Country)
+rawData = rawData %>% rename(Country = ƒè..Country)
 
 # Prezentacja wczytanych danych
 head(rawData)
@@ -56,27 +58,49 @@ corrplot(cor(rawData[, 2:13]), order = "original")
 # W kolejnosci malejacej dla glownych komponentow
 corrplot(cor(rawData[, 2:13]), order = "FPC")
 
-# OdwrÛcenie kierunku korelacji dla zmiennych, ktore powinny wplywac negatywnie na jakosc powietrza
-rawData$x2 <- max(rawData$x2) - rawData$x2
-rawData$x3 <- max(rawData$x3) - rawData$x3
-rawData$x4 <- max(rawData$x4) - rawData$x4
-rawData$x7 <- max(rawData$x7) - rawData$x7
-rawData$x8 <- max(rawData$x8) - rawData$x8
-rawData$x11 <- max(rawData$x11) - rawData$x11
-
-# Weryfikacja korelacji dla poszczegolnych zmiennych
-# W domylnym ulozeniu
-corrplot(cor(rawData[, 2:13]), order = "original")
-# W kolejnosci malejacej dla glownych komponentow
-corrplot(cor(rawData[, 2:13]), order = "FPC")
-
 ### Powyzej jest ok ###
 
+# Srednia
+valMean<-round(sapply(rawData[, 2:13], function(y) mean(y)), 2)
+# valMean
+
+# Odchylenie standardowe
+valSd <- round(sapply(rawData[, 2:13], function(x) sd(x)), 2)
+# valSd
+
+# Wspolczynnik zmiennosci
+valCv <- round(sapply(rawData[, 2:13], function(x) sd(x) / mean(x)), 2)
+valCv
+# Wszystkie wartosci maja wsp zmiennosci > 0.1
+
+###
+
+# Kwantyle
+quant = round(sapply(rawData[, 2:13], function(x) quantile(x, type = 2, probs = c(0.00, 0.25, 0.5, 0.75, 1.00))), 2)
+quant
+
+# IQR
+iqrs <- round(sapply(rawData[, 2:13], function(x) IQR(x)), 2)
+iqrs
+
+# Skosnosc
+skwns <- round(sapply(rawData[, 2:13], function(x) skewness(x)), 2)
+skwns
+
+# Kurtoza
+krt <- round(sapply(rawData[, 2:13], function(x) kurtosis(x)), 2)
+krt
 
 ### Ale to ponizej do zmiany jeszcze ###
 # (To co powyzej tez w miare potrzeb)
 
-
+heatmaply_cor(
+  cor(rawData[, 2:13]),
+  xlab = "Features", 
+  ylab = "Features",
+  k_col = 2, 
+  k_row = 2
+)
 
 
 # standaryzacja
