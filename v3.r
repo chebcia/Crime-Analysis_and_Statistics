@@ -1,28 +1,25 @@
 # Wczytanie pakietow
-
 library(readr)
-library(psych)
-library(corrplot)
+library(corrplot) # corrplot
 library(dplyr)
+library(cluster)
+library(fpc)
 library(tidyr)
 library(ggplot2)
 library(GGally)
 library(ggrepel)
-library(cluster)
-library(fpc)
 library(moments) # skosnosc
 library(heatmaply) # heatmapa
+library(psych) # principal
 
 # Weryfikacja sciezki do pliku
 getwd()
 
 # Wczytanie danych
-#rawData <- read.csv("./data.csv")
 rawData <- read.csv("./data/data.csv")
 
 # Sprawdzenie czesci wczytanych danych
 head(rawData, 3)
-
 
 # Opis danych
 # Pochodzenie danych - Eurostat.
@@ -46,6 +43,7 @@ head(rawData, 3)
 
 # Poprawa blednie wczytanej nazwy kolumny
 rawData = rawData %>% rename(Country = ď..Country)
+numericData <- rawData[, 2:13]
 
 # Prezentacja wczytanych danych
 head(rawData)
@@ -60,6 +58,123 @@ corrplot(cor(rawData[, 2:13]), order = "FPC")
 
 ### Powyzej jest ok ###
 
+# standaryzacja
+numericData.scale <- scale(numericData)
+numericData.centerScale <- attr(numericData.scale, "scaled:center") 
+numericData.sScale <- attr(numericData.scale, "scaled:scale") 
+
+# Kmeans i ch
+set.seed(42)
+numericData.kmch <- kmeansruns(numericData.scale, krange = 2:10, criterion = "ch", runs = 10)
+plot(numericData.kmch$crit, type = "b")
+# Wykres wskazuje na 2
+
+# Kmeans i asw
+numericData.kmasw <- kmeansruns(numericData.scale, krange = 2:10, criterion = "asw", runs = 10)
+plot(numericData.kmasw$crit, type = "b")
+# Wykres wskazuje na 2
+
+# Pam i ch
+numericData.pamch <- pamk(numericData.scale, krange = 2:10, criterion = "ch")
+plot(numericData.pamch$crit, type = "b")
+# Wykres wskazuje na 4
+
+# Liczebnosc grup:
+table(numericData.pamch$pamobject$clustering)
+# 4 grupy - 10, 2, 6 oraz 5 elementow
+
+# Rozklady zmiennych
+rawData %>% 
+  mutate(cluster = as.factor(numericData.pamch$pamobject$clustering)) %>% 
+  pivot_longer(2:13) %>% 
+  ggplot(aes(x = cluster, y = value, fill = cluster)) +
+  geom_boxplot() +
+  facet_wrap(vars(name), scales = "free")
+
+# Pam i asw
+numericData.pamasw <- pamk(numericData.scale, krange = 2:10, criterion = "asw")
+plot(numericData.pamasw$crit, type = "b")
+# Wykres wskazuje na 2
+
+# Liczebnosc grup:
+table(numericData.pamasw$pamobject$clustering)
+# 2 grupy - 17 oraz 6 elementow
+
+# Rozklady zmiennych
+rawData %>% 
+  mutate(cluster = as.factor(numericData.pamasw$pamobject$clustering)) %>% 
+  pivot_longer(2:13) %>% 
+  ggplot(aes(x = cluster, y = value, fill = cluster)) +
+  geom_boxplot() +
+  facet_wrap(vars(name), scales = "free")
+
+# Grupowanie hierarchiczne
+# Wyznaczenie macierzy dystansu
+distMatrix <- dist(numericData.scale, method = "euclidean")
+
+# Grupowanie z dystansem euklidesowym metoda Warda
+numericData.hclust <- hclust(distMatrix, method = "ward.D2")
+plot(numericData.hclust, main = "Ward")
+# Podzial na 3 grupy
+
+# Obciecie dla 3 grup
+numericData.hclust.3 <- cutree(numericData.hclust, k = 3)
+numericData.hclust
+table(numericData.hclust.3) 
+# 3 grupy - 15, 2 oraz 6 elementow
+
+# Grupowanie hierarchiczne z dystansem manhattan metoda Warda
+distMatrix2 <- dist(numericData.scale, method = "manhattan")
+plot(hclust(distMatrix2, method = "ward.D2"))
+# Podzial na 3 grupy
+
+# W sumie tu nie jest konieczna standaryzacja danych
+pca1 <- principal(numericData.scale, nfactors = 12, rotate = "none")
+pca1
+
+# Wykres osypiska
+plot(pca1$values, type = "b", xlab = "Liczba skladowych", ylab = "Wartosci wlasne skladowych")
+abline(h = 1, lty = 2, col = "red")
+# Przelamanie na wykresie przy wartosci 4
+
+# SS loadings - wartosc wlasna ponizej 1 od piatej wartosci (PC5)
+# konieczny wybor 4 skladowych
+pca2 <- principal(numericData.scale, nfactors = 4, rotate = "none")
+# pca2
+pca2$loadings
+# Z pierwsza skladowa mocno skorelowane zmienne x1, x4, x5, x7, x10
+# Z druga tylko x8 i x11
+# Z trzecia wylacznie x9
+
+# Wartosci skladowych dla poszczegolnych obserwacji
+countries <- pca2$scores %>% 
+  as.data.frame() %>% 
+  mutate(country = rawData$Country)
+
+# Analiza PCA + grupowanie k-medoidow
+countries %>% mutate(cluster = as.factor(numericData.pamch$pamobject$clustering)) %>% 
+  ggplot(aes(PC1, PC2, fill = cluster)) + geom_point() + 
+  geom_text_repel(aes(label = country, color = cluster))
+
+# Prezentacja na wykresie typu biplot wybranych skladowych
+biplot(pca2)
+# Ze wzgledu na ilosc elementow wykres nie jest zbyt czytelny
+# Z tego powodu na wykresie przedstawiane sa wylacznie dwie pierwsze skladowe
+biplot(principal(numericData.scale, nfactors = 2, rotate = "none"))
+# Zmienne x1, x2, x4, x5, x6, x7, x8 i x10 sa dodatnio skorelowane z pierwsza skladowa
+# Zmienne y, x3, x9 i x11 sa ujemnie skorelowane z pierwsza skladowa
+# Zmienne y, x1, x2, x3, x4, x8, x10, x11 sa dodatnio skorelowane z druga skladowa
+# Zmienne x5, x6, x7, x9 sa ujemnie skorelowane z druga skladowa
+
+# Within SS dla 1-10 skupisk na podst. wykresu osypiska
+repl <- rep(0, 10)
+for(i in 1:10)
+  repl[i] <- kmeans(numericData.scale, centers = i, nstart = 10)$tot.withinss
+plot(repl, type = "b")
+# Przelamanie na wykresie przy wartosci 2
+
+
+#############
 # Srednia
 valMean<-round(sapply(rawData[, 2:13], function(y) mean(y)), 2)
 # valMean
@@ -72,8 +187,6 @@ valSd <- round(sapply(rawData[, 2:13], function(x) sd(x)), 2)
 valCv <- round(sapply(rawData[, 2:13], function(x) sd(x) / mean(x)), 2)
 valCv
 # Wszystkie wartosci maja wsp zmiennosci > 0.1
-
-###
 
 # Kwantyle
 quant = round(sapply(rawData[, 2:13], function(x) quantile(x, type = 2, probs = c(0.00, 0.25, 0.5, 0.75, 1.00))), 2)
@@ -91,9 +204,7 @@ skwns
 krt <- round(sapply(rawData[, 2:13], function(x) kurtosis(x)), 2)
 krt
 
-### Ale to ponizej do zmiany jeszcze ###
-# (To co powyzej tez w miare potrzeb)
-
+# Heatmapa
 heatmaply_cor(
   cor(rawData[, 2:13]),
   xlab = "Features", 
@@ -103,130 +214,6 @@ heatmaply_cor(
 )
 
 
-# standaryzacja
-rawData.s <- scale(rawData[, -c(1)])
-rawData.center <- attr(rawData.s, "scaled:center") 
-rawData.scale <- attr(rawData.s, "scaled:scale") 
-
-# Analiza skupien 
-# Wybor liczby skupien
-
-# Wykres osypiska - a tego akurat nie rozumiem do konca
-set.seed(1)
-x <- 1:10
-for(i in 1:10)
-  x[i] <- kmeans(rawData.s, centers = i, nstart = 10)$tot.withinss
-plot(x, type = "b")
-
-# Wykres wskazuje na 2
-
-# kmeans i ch
-set.seed(10)
-rawData.km1 <- kmeansruns(rawData.s, krange = 2:10, criterion = "ch", runs = 10)
-plot(rawData.km1$crit, type = "b")
-
-# Wykres wskazuje na 2
-
-# kmeans i asw
-
-set.seed(20)
-rawData.km2 <- kmeansruns(rawData.s, krange = 2:10, criterion = "asw", runs = 10)
-plot(rawData.km2$crit, type = "b")
-
-# Wykres wskazuje na 2
-
-# pam i ch
-
-rawData.pam1 <- pamk(rawData.s, krange = 2:10, criterion = "ch")
-plot(rawData.pam1$crit, type = "b")
-
-# Wykres wskazuje na 2
-
-# pam i asw
-
-rawData.pam2 <- pamk(rawData.s, krange = 2:10, criterion = "asw")
-plot(rawData.pam2$crit, type = "b")
-
-# Wykres wskazuje na 2
-
-# Grupowanie hierarchiczne z dystansem euklidesowym
-
-d <- dist(rawData.s, method = "euclidean")
-plot(hclust(d, method = "ward.D2"))
-
-# 2 grupy/tez 3?
-
-
-# Grupowanie hierarchiczne z dystansem manhattan
-
-d <- dist(rawData.s, method = "manhattan")
-plot(hclust(d, method = "ward.D2"))
-# 2 grupy/W sumie to 3 chyba lepsza opcja by bylo
-
-
-
-# To jest do zmiany:
-# Klasteryzacja
-
-# ustalenie grupy:
-
-rawData.pam1$pamobject$clustering
-
-# Liczebnosc grup:
-
-table(rawData.pam1$pamobject$clustering)
-
-# Rozklady zmiennych
-rawData %>% 
-  mutate(cluster = as.factor(rawData.pam1$pamobject$clustering)) %>% 
-  pivot_longer(2:13) %>% 
-  ggplot(aes(x = cluster, y = value, fill = cluster)) +
-  geom_boxplot() +
-  facet_wrap(vars(name), scales = "free")
-
-# Interpretacja:
-
-
-rawData.s %>% 
-  as.data.frame() %>% 
-  mutate(cluster = as.factor(rawData.pam1$pamobject$clustering)) %>%
-  group_by(cluster) %>% 
-  summarise_all(mean) %>% 
-  pivot_longer(-1) %>% 
-  ggplot(aes(x = name, y = value, color = cluster)) +
-  geom_line(aes(group = cluster)) +
-  geom_point() +
-  theme_minimal() +
-  coord_flip()
-
-# Interpretacja:
-
-
-# Analiza skupien - PCA
-rawData.pca <- principal(rawData.s, nfactors = 12, rotate = "none")
-
-# Analiza wynikow
-rawData.pca
-
-# Interpretacja:
-
-# Zmniejszenie liczby factorow
-rawData.pca2 <- principal(rawData.s, nfactors = 2, rotate = "none")
-
-# Analiza wynikow
-rawData.pca2$loadings
-
-# Interpretacja:
-
-
-biplot(rawData.pca2)
-
-# Interpretacja:
-
-rawData2 <- rawData.pca2$scores %>% 
-  as.data.frame() %>% 
-  mutate(Country = rawData$kraj)
-
-# Interpretacja
-
+# Interpretacje
+# Wnioski
 # Podsumowanie
